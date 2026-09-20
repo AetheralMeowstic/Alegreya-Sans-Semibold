@@ -1,0 +1,43 @@
+name: Build Native Semibold OTFs
+on: workflow_dispatch
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build toolchain
+        run: pip install --upgrade pip fontmake fonttools glyphsLib
+
+      - name: Inject true 600-weight instance and compile OTFs
+        run: |
+          python3 -c "
+          import glyphsLib
+
+          def add_instance(path, name):
+              font = glyphsLib.load(path)
+              inst = glyphsLib.classes.GSInstance()
+              inst.name = name
+              inst.weightClass = 600
+              inst.axes = [600]
+              font.instances.append(inst)
+              font.save(path)
+
+          add_instance('sources/Alegreya Sans.glyphs', 'SemiBold')
+          add_instance('sources/Alegreya Sans Italic.glyphs', 'SemiBold Italic')
+          "
+          fontmake -g "sources/Alegreya Sans.glyphs" -o otf -i "SemiBold"
+          fontmake -g "sources/Alegreya Sans Italic.glyphs" -o otf -i "SemiBold Italic"
+
+      - name: Upload OTFs as zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: Alegreya-Sans-SemiBold-OTFs
+          path: instance_otf/*.otf
