@@ -1,6 +1,9 @@
 name: Build Native Semibold OTFs
 on: workflow_dispatch
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -16,12 +19,24 @@ jobs:
       - name: Install build toolchain
         run: pip install --upgrade pip fontmake fonttools glyphsLib
 
-      - name: Inject true 600-weight instance and compile OTFs
+      - name: Locate files and compile true 600 OTFs
         run: |
-          python3 -c "
-          import glyphsLib
+          python3 - << 'EOF'
+          import os, glob, glyphsLib
+
+          # Automatically locate the glyphs files regardless of folder structure
+          def find_file(pattern):
+              matches = glob.glob(f"**/{pattern}", recursive=True)
+              if not matches:
+                  raise FileNotFoundError(f"Could not locate {pattern} in repo")
+              return matches[0]
+
+          roman_path = find_file("*Alegreya*Sans*.glyphs")
+          italic_candidates = [f for f in glob.glob("**/*Alegreya*Sans*.glyphs", recursive=True) if "Italic" in f or "italic" in f]
+          italic_path = italic_candidates[0] if italic_candidates else None
 
           def add_instance(path, name):
+              print(f"Modifying: {path}")
               font = glyphsLib.load(path)
               inst = glyphsLib.classes.GSInstance()
               inst.name = name
@@ -30,14 +45,28 @@ jobs:
               font.instances.append(inst)
               font.save(path)
 
-          add_instance('sources/Alegreya Sans.glyphs', 'SemiBold')
-          add_instance('sources/Alegreya Sans Italic.glyphs', 'SemiBold Italic')
-          "
-          fontmake -g "sources/Alegreya Sans.glyphs" -o otf -i "SemiBold"
-          fontmake -g "sources/Alegreya Sans Italic.glyphs" -o otf -i "SemiBold Italic"
+          add_instance(roman_path, "SemiBold")
+          if italic_path:
+              add_instance(italic_path, "SemiBold Italic")
+
+          # Write out exact paths for the next shell command
+          with open("paths.env", "w") as f:
+              f.write(f"ROMAN_SRC={roman_path}\n")
+              if italic_path:
+                  f.write(f"ITALIC_SRC={italic_path}\n")
+          EOF
+
+          source paths.env
+          echo "Building Roman: $ROMAN_SRC"
+          fontmake -g "$ROMAN_SRC" -o otf -i "SemiBold"
+
+          if [ -n "$ITALIC_SRC" ]; then
+            echo "Building Italic: $ITALIC_SRC"
+            fontmake -g "$ITALIC_SRC" -o otf -i "SemiBold Italic"
+          fi
 
       - name: Upload OTFs as zip
         uses: actions/upload-artifact@v4
         with:
           name: Alegreya-Sans-SemiBold-OTFs
-          path: instance_otf/*.otf
+          path: "**/*.otf"
